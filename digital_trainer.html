@@ -1,1 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>数字口译练习器 · 移动端优化版</title>
+<style>
+body {
+    margin:0;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:#020617;
+    color:#e5e7eb;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    min-height:100vh;
+}
+.container{
+    max-width:600px;
+    width:95%;
+    padding:20px;
+    margin-top:20px;
+    background:#0f172a;
+    border-radius:16px;
+}
+h1{font-size:1.3rem;margin-bottom:10px;text-align:center;}
+.display{
+    min-height:60px;
+    font-size:1.5rem;
+    font-weight:700;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    margin-bottom:12px;
+}
+input{
+    width:100%;
+    padding:14px;
+    font-size:1.1rem;
+    border-radius:10px;
+    border:none;
+    margin-bottom:10px;
+}
+button{
+    width:100%;
+    padding:14px;
+    font-size:1.1rem;
+    border-radius:10px;
+    border:none;
+    background:#334155;
+    color:#fff;
+}
+.result{margin-top:8px;font-size:.95rem;}
+.good{color:#22c55e;}
+.bad{color:#ef4444;}
+.hint{margin-top:10px;font-size:.75rem;color:#94a3b8;line-height:1.5;}
+.history{
+    margin-top:20px;
+    max-height:180px;
+    overflow-y:auto;
+    background:#1e293b;
+    border-radius:10px;
+    padding:10px;
+    font-size:0.9rem;
+}
+.history div{margin-bottom:4px;}
+label{display:flex;align-items:center;gap:6px;font-size:.9rem;margin-bottom:6px;}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🎧 数字口译练习器</h1>
+<div>
+    <label>模式:
+        <select id="modeSelect">
+            <option value="ENZH">中→英</option>
+            <option value="ZHEN">英→中</option>
+        </select>
+    </label>
+    <label>数字个数:
+        <input type="number" id="numCount" min="1" max="7" value="3">
+    </label>
+</div>
+<div class="display" id="displayText">Ready</div>
+<input id="userInput" placeholder="输入你的译文简写, 如 3k2w / 32m">
+<button id="startBtn">开始新题</button>
+<div class="result" id="result"></div>
+<div class="history" id="history"></div>
+<div class="hint">
+Enter / Space: 提交答案<br>
+M: 切换模式
+</div>
+</div>
 
+<script>
+const synth = window.speechSynthesis;
+let voices=[], enVoice;
+speechSynthesis.onvoiceschanged = ()=>{voices=synth.getVoices(); enVoice=voices.find(v=>v.lang.includes("en-US")||v.lang.includes("en-GB"))};
+
+const display = document.getElementById("displayText");
+const userInput = document.getElementById("userInput");
+const resultEl = document.getElementById("result");
+const historyEl = document.getElementById("history");
+const startBtn = document.getElementById("startBtn");
+const modeSelect = document.getElementById("modeSelect");
+const numCountInput = document.getElementById("numCount");
+
+let currentNumbers=[], currentMode="ENZH";
+
+function generateNumbers(count){
+    const units=[1e3,1e6,1e8,1e9];
+    let arr=[];
+    for(let i=0;i<count;i++){
+        const u=units[Math.floor(Math.random()*units.length)];
+        const base = (Math.floor(Math.random()*90)+10)*u;
+        arr.push(base);
+    }
+    return arr;
+}
+
+function formatEN(num){
+    if(num>=1e9)return (num/1e9)+" billion";
+    if(num>=1e6)return (num/1e6)+" million";
+    if(num>=1e3)return (num/1e3)+" thousand";
+    return num.toString();
+}
+
+function formatZH(num){
+    if(num>=1e8)return Math.round(num/1e8)+"亿";
+    if(num>=1e4)return Math.round(num/1e4)+"万";
+    return num.toString();
+}
+
+function speakText(){
+    synth.cancel();
+    const startU = new SpeechSynthesisUtterance("开始");
+    startU.lang="zh-CN";
+    startU.rate=1.0;
+    synth.speak(startU);
+    startU.onend = ()=>{
+        let text="";
+        if(currentMode==="ENZH") text=currentNumbers.map(formatZH).join("，");
+        else text=currentNumbers.map(formatEN).join(", ");
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = currentMode==="ENZH"?"zh-CN":(enVoice?.lang||"en-US");
+        u.voice = currentMode==="ENZH"?null:enVoice;
+        u.rate=1.1;
+        synth.speak(u);
+    };
+}
+
+function startNewQuestion(){
+    display.textContent="...";
+    userInput.value="";
+    resultEl.textContent="";
+    const count = parseInt(numCountInput.value)||3;
+    currentNumbers = generateNumbers(count);
+    speakText();
+}
+
+function checkAnswer(){
+    const ans = userInput.value.toLowerCase().replace(/[, ]/g,"");
+    let correct=true;
+    if(currentMode==="ENZH"){
+        currentNumbers.forEach(n=>{
+            const w=Math.round(n/1e4); const e=Math.round(n/1e8);
+            const m=Math.round(n/1e6); const b=Math.round(n/1e9);
+            const k=Math.round(n/1e3);
+            if(!(
+                ans.includes(e+"e") || ans.includes(w+"w") || ans.includes(k+"k") || ans.includes(m+"m") || ans.includes(b+"b")
+            )) correct=false;
+        });
+    }else{
+        currentNumbers.forEach(n=>{
+            const valEN=formatEN(n).replace(/ /g,"").toLowerCase();
+            if(!ans.includes(valEN.replace(/billion/g,"b").replace(/million/g,"m").replace(/thousand/g,"k"))) correct=false;
+        });
+    }
+    resultEl.innerHTML=correct?'<span class="good">✅ 正确</span>':'<span class="bad">❌ 错误</span>';
+    historyEl.innerHTML+=`<div>${currentMode==="ENZH"?currentNumbers.map(formatZH).join("，"):currentNumbers.map(formatEN).join(", ")} → ${ans}</div>`;
+}
+
+startBtn.onclick=startNewQuestion;
+
+userInput.addEventListener("keydown",e=>{
+    if(e.key==="Enter" || e.key===" "){
+        e.preventDefault();
+        checkAnswer();
+    }
+});
+
+document.addEventListener("keydown",e=>{
+    if(e.code==="KeyM"){
+        currentMode=currentMode==="ENZH"?"ZHEN":"ENZH";
+    }
+});
+
+</script>
+</body>
+</html>
